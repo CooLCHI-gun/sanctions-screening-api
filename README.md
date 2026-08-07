@@ -2,7 +2,7 @@
 
 Real-time sanctions screening against **OFAC SDN, EU Consolidated, and UN Security Council** lists — 26,000+ records, updated daily. Built for fintech, payments, and compliance teams.
 
-**▶ Try it live on RapidAPI:** [rapidapi.com/CooLCHI-gun/api/sanctions-screening-api](https://rapidapi.com/CooLCHI-gun/api/sanctions-screening-api)
+**▶ Try it live on RapidAPI:** [rapidapi.com/CooLCHI-gun/api/sanctions-screening-api2](https://rapidapi.com/CooLCHIgun/api/sanctions-screening-api2)
 **▶ Live health check:** [https://sanc.mooocopy.com/ready](https://sanc.mooocopy.com/ready)
 
 > This repository shows the **public API surface and architecture** of the
