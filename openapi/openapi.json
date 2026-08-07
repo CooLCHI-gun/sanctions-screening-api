@@ -1,0 +1,929 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Sanctions Screening API",
+    "description": "Screen entities against global sanctions lists (OFAC SDN, EU Consolidated List, UN Security Council) with explainable, auditable results.\n\nKey features:\n- 5-tier matching: exact, alias, fuzzy, phonetic, and LLM-assisted verification\n- LLM cascade reduces false positives on borderline matches\n- Complete audit trail for regulatory compliance\n- Human review queue for high-confidence hits\n- Per-tenant custom watchlists\n\nBuilt for fintech, VASP, and crypto exchange compliance teams.",
+    "version": "0.10.0"
+  },
+  "servers": [
+    {
+      "url": "https://{rapidapi-host}",
+      "description": "RapidAPI Hub (host provided per-request)"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "API key for authentication. Every request must include a valid\n`X-API-Key` header. Keys are issued per tenant when the service runs in\ntenant mode (TENANT_MODE=1). In legacy deployments the key comes from the\n`API_KEY` environment variable."
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Machine-readable error code",
+                "example": "MISSING_FIELD"
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable error description",
+                "example": "query_name is required"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ScreeningRequest": {
+        "type": "object",
+        "required": [
+          "query_name"
+        ],
+        "properties": {
+          "query_name": {
+            "type": "string",
+            "description": "Name of the individual or entity to screen",
+            "example": "Juan Manuel Santos"
+          },
+          "entity_type": {
+            "type": "string",
+            "description": "Type of entity being screened",
+            "enum": [
+              "individual",
+              "organization",
+              "vessel",
+              "aircraft"
+            ],
+            "example": "individual"
+          },
+          "country": {
+            "type": "string",
+            "description": "Country of association or registration",
+            "example": "CO"
+          },
+          "date_of_birth": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of birth for individual screening (YYYY-MM-DD)",
+            "example": "1951-08-10"
+          },
+          "registration_number": {
+            "type": "string",
+            "description": "Company or vessel registration number"
+          },
+          "fuzzy": {
+            "type": "boolean",
+            "description": "Enable fuzzy name matching",
+            "default": false
+          },
+          "threshold": {
+            "type": "number",
+            "format": "float",
+            "description": "Minimum confidence threshold for match inclusion (0.0 to 1.0)",
+            "minimum": 0,
+            "maximum": 1,
+            "example": 0.8
+          }
+        }
+      },
+      "ScreeningResult": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "description": "Unique identifier for this screening request",
+            "example": "scr_1234567890"
+          },
+          "screened_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ScreeningStatus",
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when screening was performed"
+          },
+          "total_matches": {
+            "type": "integer",
+            "description": "Number of candidates that matched the query"
+          },
+          "candidates": {
+            "type": "array",
+            "description": "List of matching candidates (always an array; empty array if no match)",
+            "items": {
+              "$ref": "#/components/schemas/ScreeningCandidate"
+            }
+          }
+        },
+        "required": [
+          "request_id",
+          "screened_at",
+          "total_matches",
+          "candidates"
+        ]
+      },
+      "LLMVerification": {
+        "type": "object",
+        "description": "Result of LLM cascade verification (present when a borderline candidate was escalated to an LLM for final judgment).\n",
+        "properties": {
+          "verified": {
+            "type": "boolean",
+            "description": "Whether the LLM confirmed this as a match",
+            "example": true
+          },
+          "reasoning": {
+            "type": "string",
+            "description": "LLM's explanation for its verdict",
+            "example": "Same individual, minor spelling variation"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the LLM verification was performed"
+          }
+        },
+        "required": [
+          "verified",
+          "checked_at"
+        ]
+      },
+      "ScreeningCandidate": {
+        "type": "object",
+        "properties": {
+          "entity_name": {
+            "type": "string",
+            "description": "Full name as recorded on the sanctions list"
+          },
+          "entity_type": {
+            "type": "string"
+          },
+          "list_name": {
+            "type": "string",
+            "description": "Name of the sanctions list"
+          },
+          "list_version": {
+            "type": "string",
+            "description": "Version identifier of the list at screening time"
+          },
+          "confidence_score": {
+            "type": "number",
+            "format": "float",
+            "description": "Overall confidence that this candidate matches the query (0.0 to 1.0)"
+          },
+          "matched_fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields that contributed to the match"
+          },
+          "sources": {
+            "type": "array",
+            "description": "Source references for this listing (always an array)",
+            "items": {
+              "$ref": "#/components/schemas/SourceReference"
+            }
+          },
+          "explanation": {
+            "$ref": "#/components/schemas/MatchExplanation"
+          },
+          "llm_verification": {
+            "$ref": "#/components/schemas/LLMVerification"
+          }
+        },
+        "required": [
+          "entity_name",
+          "entity_type",
+          "list_name",
+          "list_version",
+          "confidence_score",
+          "matched_fields",
+          "sources"
+        ]
+      },
+      "SourceReference": {
+        "type": "object",
+        "properties": {
+          "source_name": {
+            "type": "string",
+            "description": "Name of the issuing authority or list",
+            "example": "OFAC"
+          },
+          "list_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to the official source document"
+          },
+          "ref_number": {
+            "type": "string",
+            "description": "Reference number assigned by the issuing body"
+          },
+          "country": {
+            "type": "string",
+            "description": "Country associated with the listing"
+          }
+        },
+        "required": [
+          "source_name"
+        ]
+      },
+      "MatchExplanation": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "description": "Human-readable explanation of the match"
+          },
+          "match_type": {
+            "type": "string",
+            "description": "Category of match:\n* `exact` \u2014 normalised exact match on primary name\n* `alias` \u2014 normalised exact match on known alias\n* `fuzzy` \u2014 composite fuzzy match on primary name\n* `fuzzy_alias` \u2014 composite fuzzy match on alias\n",
+            "enum": [
+              "exact",
+              "alias",
+              "fuzzy",
+              "fuzzy_alias"
+            ]
+          },
+          "matched_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Specific data fields that triggered the match"
+          },
+          "scoring_breakdown": {
+            "type": "object",
+            "description": "Per-scoring-component breakdown",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "match_type",
+          "matched_on"
+        ]
+      },
+      "ScreeningStatus": {
+        "type": "string",
+        "enum": [
+          "pass",
+          "hit",
+          "pending"
+        ],
+        "description": "Overall disposition of a screening."
+      },
+      "Sensitivity": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "sanctions_related"
+        ],
+        "description": "How sensitive a matched record is."
+      },
+      "SanctionBasis": {
+        "type": "string",
+        "enum": [
+          "direct",
+          "ownership_50_rule"
+        ],
+        "description": "Why a record is sanctioned."
+      },
+      "Case": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "query_name": {
+            "type": "string"
+          },
+          "candidate": {
+            "type": "string"
+          },
+          "list_name": {
+            "type": "string"
+          },
+          "confidence_score": {
+            "type": "number"
+          },
+          "llm_reasoning": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "false_positive"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decided_by": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "query_name",
+          "candidate",
+          "status"
+        ]
+      },
+      "CaseDecisionRequest": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected",
+              "false_positive"
+            ]
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "WatchlistVersionInfo": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "description": "Map of list name -> current version."
+      },
+      "AuditEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "screening_requested",
+              "screening_completed",
+              "provider_error",
+              "case_decision"
+            ]
+          },
+          "payload_json": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "event_type",
+          "payload_json"
+        ]
+      }
+    }
+  },
+  "paths": {
+    "/screen": {
+      "post": {
+        "summary": "Screen an entity against sanctions lists",
+        "description": "Accepts a screening request and returns matching candidates\nfrom loaded sanctions records. Each candidate includes a\nconfidence score, matched fields, source attribution, and\nan explanation payload.\n",
+        "operationId": "screenEntity",
+        "tags": [
+          "screening"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreeningRequest"
+              },
+              "example": {
+                "query_name": "Juan Manuel Santos",
+                "entity_type": "individual",
+                "country": "CO",
+                "fuzzy": false,
+                "threshold": 0.8
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Screening completed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreeningResult"
+                },
+                "example": {
+                  "request_id": "scr_1234567890",
+                  "screened_at": "2026-07-06T12:00:00Z",
+                  "total_matches": 1,
+                  "candidates": [
+                    {
+                      "entity_name": "JUAN MANUEL SANTOS",
+                      "entity_type": "individual",
+                      "list_name": "SDN",
+                      "list_version": "sample-v1",
+                      "confidence_score": 1.0,
+                      "matched_fields": [
+                        "name"
+                      ],
+                      "sources": [
+                        {
+                          "source_name": "OFAC",
+                          "ref_number": "12345",
+                          "country": "CO"
+                        }
+                      ],
+                      "explanation": {
+                        "summary": "Exact match on primary entity name",
+                        "match_type": "exact",
+                        "matched_on": [
+                          "name"
+                        ],
+                        "scoring_breakdown": {
+                          "final_confidence": 1.0
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or validation failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "missingField": {
+                    "summary": "Missing required field",
+                    "value": {
+                      "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "query_name is required"
+                      }
+                    }
+                  },
+                  "invalidThreshold": {
+                    "summary": "Invalid threshold",
+                    "value": {
+                      "error": {
+                        "code": "INVALID_THRESHOLD",
+                        "message": "threshold must be between 0.0 and 1.0"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API key required or invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "error": {
+                    "code": "UNAUTHORIZED",
+                    "message": "missing or invalid API key"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/watchlists": {
+      "get": {
+        "summary": "List tenant watchlists and versions",
+        "operationId": "listWatchlists",
+        "tags": [
+          "watchlists"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Watchlist names and current versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "watchlists": {
+                      "$ref": "#/components/schemas/WatchlistVersionInfo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API key required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/watchlists/{list_name}": {
+      "post": {
+        "summary": "Upload a tenant watchlist (CSV, new version)",
+        "operationId": "uploadWatchlist",
+        "tags": [
+          "watchlists"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "list_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/csv": {
+              "schema": {
+                "type": "string"
+              },
+              "example": "entity_id,name,type,country,dob,identifiers,tags\nwl1,John Smith,person,US,1980-01-01,passport:123,pep\n"
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Uploaded (new version)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "list_name": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    },
+                    "entries": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid CSV",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases": {
+      "get": {
+        "summary": "List review queue cases",
+        "operationId": "listCases",
+        "tags": [
+          "review"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected",
+                "false_positive"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Case list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cases": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Case"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cases/{id}": {
+      "get": {
+        "summary": "Get one review case",
+        "operationId": "getCase",
+        "tags": [
+          "review"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Case detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Decide a pending review case",
+        "operationId": "decideCase",
+        "tags": [
+          "review"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseDecisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "case_id": {
+                      "type": "integer"
+                    },
+                    "decision": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Case not pending or not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/audit": {
+      "get": {
+        "summary": "Query the audit trail",
+        "operationId": "listAudit",
+        "tags": [
+          "audit"
+        ],
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "screening_requested",
+                "screening_completed",
+                "provider_error",
+                "case_decision"
+              ]
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AuditEvent"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Insufficient tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

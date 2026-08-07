@@ -1,0 +1,25 @@
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Build
+*.exe
+/api
+/bin/
+
+# Data (large/generated — fetch from official sources instead)
+data/
+*.xml
+*.json
+!openapi/openapi.json
+
+# Editor
+*.swp
+*.bak
+.idea/
+.vscode/
+
+# Logs
+*.log
