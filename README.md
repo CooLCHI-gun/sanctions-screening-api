@@ -7,8 +7,8 @@ Real-time sanctions screening against **OFAC SDN, EU Consolidated, and UN Securi
 
 > This repository shows the **public API surface and architecture** of the
 > Sanctions Screening service. The production service is available via
-> RapidAPI — subscribe there to use the full engine (5-tier matching, LLM
-> review, multi-tenant audit trail). The core matching engine, data pipeline,
+> RapidAPI — subscribe there to use the full engine (exact + alias + fuzzy name matching, optional LLM
+> review of borderline candidates, multi-tenant audit trail). The core matching engine, data pipeline,
 > and provider implementations are proprietary and not included here.
 
 ---
@@ -31,7 +31,7 @@ curl -X POST "https://sanctions-screening-api2.p.rapidapi.com/screen" \
   -H "X-RapidAPI-Key: <YOUR_RAPIDAPI_KEY>" \
   -H "X-RapidAPI-Host: sanctions-screening-api2.p.rapidapi.com" \
   -H "X-API-Key: <YOUR_TENANT_KEY>" \
-  -d '{"query_name": "Kim Jong Un", "entity_type": "individual", "threshold": 0.7}'
+  -d '{"query_name": "Kim Jong Un", "threshold": 0.8}'
 ```
 
 Tenant keys are issued during RapidAPI onboarding. See [API guide](docs/api-guide.md) for the full endpoint reference.
@@ -54,7 +54,7 @@ Tenant keys are issued during RapidAPI onboarding. See [API guide](docs/api-guid
         ┌───────────────▼───┐  ┌───────▼───────┐  ┌───▼────────────┐
         │  Matching engine  │  │  Tenant store │  │  Audit / Review│
         │  (proprietary)    │  │  (SQLite)     │  │  (SQLite)      │
-        │  5-tier pipeline  │  │  keys, tiers  │  │  append-only   │
+        │  fuzzy matching   │  │  keys, tiers  │  │  append-only   │
         └───────────────┬───┘  └───────────────┘  └────────────────┘
                         │
         ┌───────────────▼───────────────────────────────┐
@@ -66,7 +66,7 @@ Tenant keys are issued during RapidAPI onboarding. See [API guide](docs/api-guid
 **This repo includes:** HTTP API handlers, middleware, tenant/auth, watchlist,
 audit, review, models, config, bootstrap wiring — the request-handling layer.
 
-**Proprietary (not included):** matching pipeline (4-tier fuzzy + LLM review),
+**Proprietary (not included):** matching pipeline (exact + alias + fuzzy matching, optional LLM review),
 provider implementations (OFAC/EU/UN fetch + normalize), data update scripts,
 deployment tooling.
 
