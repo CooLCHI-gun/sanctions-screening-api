@@ -5,9 +5,43 @@ Real-time sanctions screening against **OFAC SDN, EU Consolidated, and UN Securi
 **▶ Try it live on RapidAPI:** [rapidapi.com/CooLCHI-gun/api/sanctions-screening-api2](https://rapidapi.com/CooLCHIgun/api/sanctions-screening-api2)
 **▶ Live health check:** [https://sanc.mooocopy.com/ready](https://sanc.mooocopy.com/ready)
 
+**▶ Use it from an AI agent (MCP, no API key):** `https://sanc.mooocopy.com/mcp`
+
+---
+
+## MCP — for AI agents
+
+The same screening engine is exposed as a **remote MCP server** (Streamable HTTP), so an agent can
+screen names with no API key and no signup:
+
+```json
+{
+  "mcpServers": {
+    "sanctions": { "url": "https://sanc.mooocopy.com/mcp" }
+  }
+}
+```
+
+| Tool | Price | What it returns |
+|---|---|---|
+| `sanctions_lists_metadata` | free, unlimited | list version, record count and sources, so a caller can check freshness first |
+| `screen_name` | free within a small daily quota, then **$0.002/call** via x402 (USDC on Base) | ranked candidates with match tier (exact / alias / fuzzy / fuzzy-alias), confidence and source attribution |
+| `screen_batch` | **$0.02/call**, up to 100 names, no free quota | one result per name plus aggregated hit counts and a screening id for the audit trail |
+| `screen_ownership_50pct` | **$0.05/call** — _planned, not yet available_ | OFAC 50 Percent Rule check: owned 50%+ in aggregate by designated persons, so not itself on any list |
+
+Discovery descriptor: `https://sanc.mooocopy.com/.well-known/mcp.json` · price table: `https://sanc.mooocopy.com/catalog`
+
+Example:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"screen_name","arguments":{"query_name":"Vladimir Putin"}}}
+```
+
+→ `Vladimir PUTIN` · OFAC-SDN · `match_type: alias` · confidence `0.9` · ref `35096`
+
 > This repository shows the **public API surface and architecture** of the
 > Sanctions Screening service. The production service is available via
-> RapidAPI — subscribe there to use the full engine (exact + alias + fuzzy name matching, optional LLM
+> RapidAPI (or the remote MCP server above) — subscribe or call it to use the full engine (exact + alias + fuzzy name matching, optional LLM
 > review of borderline candidates, multi-tenant audit trail). The core matching engine, data pipeline,
 > and provider implementations are proprietary and not included here.
 
