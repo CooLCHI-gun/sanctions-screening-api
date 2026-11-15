@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.CooLCHI-gun/sanctions-screening-api",
   "title": "Sanctions Screening (OFAC/EU/UN)",
-  "description": "Screen any name against OFAC SDN, EU and UN sanctions lists from your agent. Free daily quota; per-call USDC settlement via x402.",
-  "version": "0.11.0",
+  "description": "Sanctions screening of any person or company against OFAC SDN, EU and UN lists. Free quota.",
+  "version": "0.11.1",
   "websiteUrl": "https://sanc.mooocopy.com/catalog",
   "repository": {
     "url": "https://github.com/CooLCHI-gun/sanctions-screening-api",
